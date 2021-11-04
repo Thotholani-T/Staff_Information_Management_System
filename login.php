@@ -1,91 +1,56 @@
 <?php
-// Initialize the session
-session_start();
- 
-// Check if the user is already logged in, if yes then redirect him to welcome page
-if(isset($_SESSION["loggedin"]) && $_SESSION["loggedin"] === true){
-    header("location: welcome.php");
-    exit;
-}
- 
-// Include config file
-require_once "config.php";
- 
-// Define variables and initialize with empty values
-$id = $password = "";
-$emp_id_error = $password_error = $login_error = "";
- 
-// Processing form data when form is submitted
-if($_SERVER["REQUEST_METHOD"] == "POST"){
- 
-    // Check if username is empty
-    if(empty(trim($_POST["id"]))){
-        $emp_id_error = "Please enter your employee number";
-    } else{
-        $id = trim($_POST["id"]);
-    }
-    
-    // Check if password is empty
-    if(empty(trim($_POST["password"]))){
-        $password_error = "Please enter your password.";
-    } else{
-        $password = trim($_POST["password"]);
-    }
-    
-    // Validate credentials
-    if(empty($emp_id_error) && empty($password_error)){
-        // Prepare a select statement
-        $sql = "SELECT id, username, password FROM users WHERE id = ?";
-        
-        if($stmt = mysqli_prepare($link, $sql)){
-            // Bind variables to the prepared statement as parameters
-            mysqli_stmt_bind_param($stmt, "s", $param_id);
-            
-            // Set parameters
-            $param_id = $id;
-            
-            // Attempt to execute the prepared statement
-            if(mysqli_stmt_execute($stmt)){
-                // Store result
-                mysqli_stmt_store_result($stmt);
-                
-                // Check if username exists, if yes then verify password
-                if(mysqli_stmt_num_rows($stmt) == 1){                    
-                    // Bind result variables
-                    mysqli_stmt_bind_result($stmt, $id, $username, $hashed_password);
-                    if(mysqli_stmt_fetch($stmt)){
-                        if(password_verify($password, $hashed_password)){
-                            // Password is correct, so start a new session
-                            session_start();
-                            
-                            // Store data in session variables
-                            $_SESSION["loggedin"] = true;
-                            $_SESSION["id"] = $id;
-                            $_SESSION["username"] = $username;                            
-                            
-                            // Redirect user to welcome page
-                            header("location: welcome.php");
-                        } else{
-                            // Password is not valid, display a generic error message
-                            $login_error = "Invalid employee number or password.";
-                        }
-                    }
-                } else{
-                    // Username doesn't exist, display a generic error message
-                    $login_error = "Invalid employee number or password.";
-                }
-            } else{
-                echo "Oops! Something went wrong. Please try again later.";
-            }
+    session_start();
 
-            // Close statement
-            mysqli_stmt_close($stmt);
-        }
-    }
+    include('config/db_connection.php');
     
-    // Close connection
-    mysqli_close($link);
-}
+    $msg = "";
+    if(isset($_POST['login'])){
+      $emp_id = $_POST['emp_id'];
+      $password = $_POST['password'];
+
+      $sql = "SELECT * FROM employee WHERE emp_id='$emp_id'";
+
+      $result = mysqli_query($conn,$sql);
+
+      $employee_details = mysqli_fetch_all($result,MYSQLI_ASSOC);
+
+      //checks if inputted id is valid
+      if (count($employee_details) > 0) {
+
+        //checks if inputted password is valid
+        if ($employee_details['0']['password'] == $password) {
+          // echo 'correct pass and id';
+
+          //assign session variables
+          session_regenerate_id();
+          $_SESSION['emp_id'] = $employee_details['0']['emp_id'];
+          $_SESSION['job_id'] = $employee_details['0']['job_id'];
+          $_SESSION['password'] = $employee_details['0']['password'];
+          $_SESSION['first_name'] = $employee_details['0']['first_name'];
+          $_SESSION['last_name'] = $employee_details['0']['last_name'];
+          session_write_close();
+
+          //checks type of user
+          if($result->num_rows==1 && $_SESSION['job_id'] != "ADMIN") {
+            header("location:employee_dash.php");
+          } else if($result->num_rows==1 && $_SESSION['job_id'] == "ADMIN") {
+            header("location:admin_dash.php");
+          } else {
+            $msg = '<div class="alert alert-danger" role="alert" style="text-align: center">Employee ID or Password is Incorrect</div>';
+          }
+          //end of type of user check
+
+        } else {
+          $msg = '<div class="alert alert-danger" role="alert" style="text-align: center">Employee ID or Password is Incorrect</div>';
+        }
+        //end of password check
+
+      } else {
+        //print login error as no user with those details exists
+        $msg = '<div class="alert alert-danger" role="alert" style="text-align: center">Employee ID or Password is Incorrect</div>';
+      }
+      //end of id check
+    }
 ?>
 
 <!doctype html>
@@ -112,6 +77,24 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
 
     <title>Sign In</title>
   </head>
+
+  <style>
+    .bounding {
+      background-color: #1f4c85;
+      padding: 10px;
+      border-radius: 0px 5px 5px 0px;
+      text-align: center;
+      display: flex;
+      justify-content: center;
+      height: 100%;
+      color: white;
+    }
+    .bounding:hover {
+      text-decoration: none;
+      color: white;
+    }
+  </style>
+
   <body>
 
 <!-- Navigation Bar -->
@@ -143,33 +126,47 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
                     <div class="header">
                         <h2 class="main-heading">Welcome Back</h2>
                         <h5 class="sub-heading">Sign into your account and pick up where you left off</h5>
+                        <h5 class=""><?= $msg;  ?></h5>
                     </div>
 
-                    <?php 
-                        if(!empty($login_error)){
-                            echo '<div class="alert alert-danger">' . $login_error . '</div>';
-                        }        
-                    ?>
+                    <!-- *** -->
+                    <form class="login-form" action="<?= $_SERVER['PHP_SELF'] ?>" method="post">
+                        <div class="form-group input-group input-group-lg text-box">
+                            <input type="text" class="form-control login-input" placeholder="Employee Number" name="emp_id" required>
+                          </div>
 
-                    <form class="login-form" action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post">
-                        <div class="form-group input-group input-group-lg text-box">
-                            <input type="text" class="form-control login-input <?php echo (!empty($emp_id_error)) ? 'is-invalid' : ''; ?>" placeholder="Employee Number" name="id" value="<?php echo $id; ?>">
-                            <span class="invalid-feedback"><?php echo $emp_id_error; ?></span>
-                          </div>
-                        <div class="form-group input-group input-group-lg text-box">
-                            <input type="password" class="form-control login-input <?php echo (!empty($password_error)) ? 'is-invalid' : ''; ?>" placeholder="Password" name="password">
-                            <span class="invalid-feedback"><?php echo $password_error; ?></span>
-                          </div>
+                            <div class="input-group form-group input-group input-group-lg text-box" id="show_hide_password">
+                              <input class="form-control login-input" type="password" placeholder="Password" name="password" required>
+                              <div class="input-group-addon">
+                                <a href="" class="bounding"><i class="fa fa-eye-slash" aria-hidden="true"></i></a>
+                              </div>
+                            </div>
+                          
+                          <!-- <div class="form-group input-group input-group-lg text-box">
+                            <input type="password" class="form-control login-input" >
+                            <div class="input-group-prepend">
+                              <span class="input-group-text" id="inputGroup-sizing-lg"><input type="checkbox" onclick="myFunction()"> Show Password</span>
+                            </div>
+                          </div>  -->
+
+
+                        <!-- <div class="form-group input-group input-group-lg text-box">
+                            <input type="password" id="myPassword" class="form-control login-input" placeholder="Password" name="password" required>
+                            <br>
+                            <input type="checkbox" onclick="myFunction()">Show Password
+                          </div> -->
                         
                         <div class="row submit-links">
                             <div class="col-md-7 login-btn">
-                                <button type="submit" class="btn btn-primary btn-block">Login</button>
+                                <button type="submit" name="login" class="btn btn-primary btn-block" value="login">Login</button>
                             </div>
                             <!-- <div class="col-md-5 forgot-pass">
                                 <a href="" class="login-link">Forgot Password?</a>
                             </div> -->
                         </div>
                     </form>
+
+                    
                   </div>
 
                   <div class="col-md-6 container">
@@ -193,5 +190,23 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
     <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
     <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+
+    <script>
+      $(document).ready(function() {
+          $("#show_hide_password a").on('click', function(event) {
+              event.preventDefault();
+              if($('#show_hide_password input').attr("type") == "text"){
+                  $('#show_hide_password input').attr('type', 'password');
+                  $('#show_hide_password i').addClass( "fa-eye-slash" );
+                  $('#show_hide_password i').removeClass( "fa-eye" );
+              }else if($('#show_hide_password input').attr("type") == "password"){
+                  $('#show_hide_password input').attr('type', 'text');
+                  $('#show_hide_password i').removeClass( "fa-eye-slash" );
+                  $('#show_hide_password i').addClass( "fa-eye" );
+              }
+          });
+      });
+    </script>
+  
   </body>
 </html>
